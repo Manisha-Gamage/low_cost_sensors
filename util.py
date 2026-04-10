@@ -7,22 +7,13 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-
-
-# make folder if not there
-def make_out_folder(out):
-    os.makedirs(out, exist_ok=True)
-
 
 # rmse
 def get_rmse(x, y):
     return float(np.sqrt(mean_squared_error(x, y)))
-
-
-# collect metrics in one place
+# metrics
 def get_metrics(x, y):
     return {
         "RMSE": get_rmse(x, y),
@@ -30,9 +21,6 @@ def get_metrics(x, y):
         "R2": float(r2_score(x, y)),
         "N": int(len(x)),
     }
-
-
-# print metrics
 def show_metrics(x, y):
     print(f"\n{x}")
     for a, b in y.items():
@@ -40,9 +28,8 @@ def show_metrics(x, y):
             print(f"  {a}: {b:.3f}")
         else:
             print(f"  {a}: {b}")
-
-
-# convert cols to numeric but not datetime
+            
+# convert cols to numeric not datetime
 def fix_num(x):
     y = x.copy()
     for a in y.columns:
@@ -50,17 +37,12 @@ def fix_num(x):
             y[a] = pd.to_numeric(y[a], errors="coerce")
     return y
 
-
-# load naps
 def load_naps(input):
     x = pd.read_excel(input, sheet_name="NAPS DATA")
     # removing unit row
     x = x.iloc[1:].copy()
     x = x.rename(columns={"Column1": "datetime"})
-    # datetime fix
     x["datetime"] = pd.to_datetime(x["datetime"], dayfirst=True, errors="coerce")
-
-    # keep only needed cols
     y = ["datetime","SO2 ppb", "NO ppb", "NO2 ppb", "NOX ppb", "CO ppm", "O3 ppb",
         "PM25 Ug/m3", "Temp", "RH" ]
     x = x[y]
@@ -68,8 +50,6 @@ def load_naps(input):
     x = x.dropna(subset=["datetime"]).sort_values("datetime").reset_index(drop=True)
     return x
 
-
-# load compact
 def load_compact(input, x=6):
     y = pd.read_excel(input, sheet_name="Compact Station")
     # removing unit row
@@ -79,8 +59,6 @@ def load_compact(input, x=6):
 
     if getattr(y["datetime"].dt, "tz", None) is not None:
         y["datetime"] = y["datetime"].dt.tz_localize(None)
-
-    # keep only needed cols
     x_cols = ["datetime","SO2-1", "CO-200", "O3-5", "NO-1", "NO2-2","T", "RH", "PM-2.5"]
     y = y[x_cols]
     y = fix_num(y)
@@ -105,17 +83,14 @@ def load_compact(input, x=6):
 def compact_to_15(x):
     # x - compact raw
     y = x.set_index("datetime").sort_index()
-
     a = [
         "SO2_ppb", "CO_ppm", "O3_ppb", "NO_ppb", "NO2_ppb",
         "T", "RH", "PM-2.5", "warmup_flag_6h"
     ]
-
     y = y[a].resample("15min").mean().reset_index()
     y = y.rename(columns={"T": "T_compact", "RH": "RH_compact"})
 
     return y
-
 
 # merge naps and compact
 def merge_data(x, y):
@@ -124,10 +99,9 @@ def merge_data(x, y):
     out = pd.merge(x, y, on="datetime", how="inner")
     out = out.rename(columns={"Temp": "Temp_ref", "RH": "RH_ref"})
     out = out.sort_values("datetime").reset_index(drop=True)
-
     return out
 
-# plot line
+# plot  
 def save_line(x, y, out, a, b):
     plt.figure(figsize=(12, 5))
     for c in y:
@@ -142,7 +116,6 @@ def save_line(x, y, out, a, b):
     plt.show()
     plt.close()
 
-# plot scatter
 def save_scatter(x, y, a, out, b, c):
     plt.figure(figsize=(6, 5))
     plt.scatter(x[y], x[a], s=12, alpha=0.6)
@@ -153,7 +126,7 @@ def save_scatter(x, y, a, out, b, c):
     plt.savefig(os.path.join(out, c), dpi=200)
     plt.show()
     plt.close()
-
+    
 # Q1
 @dataclass
 class Q1Result:
@@ -166,7 +139,6 @@ class Q1Result:
     out: pd.DataFrame
     m1: LinearRegression
     m2: LinearRegression
-
 
 def run_q1(x, y=True, a=False):
     # x - merged data
@@ -186,7 +158,6 @@ def run_q1(x, y=True, a=False):
 
     m1 = LinearRegression()
     m1.fit(x1[["PM-2.5"]], x1["PM25 Ug/m3"])
-
     m2 = LinearRegression()
     m2.fit(x1[z], x1["PM25 Ug/m3"])
 
@@ -198,7 +169,7 @@ def run_q1(x, y=True, a=False):
 
     r1 = y1[y1["RH_ref"] > 75].copy()
     r2 = y1[y1["RH_ref"] > 85].copy()
-
+    
     q1 = get_metrics(r1["PM25 Ug/m3"], r1["pred_raw"]) if len(r1) > 3 else None
     q2 = get_metrics(r1["PM25 Ug/m3"], r1["pred_corr"]) if len(r1) > 3 else None
     q3 = get_metrics(r2["PM25 Ug/m3"], r2["pred_raw"]) if len(r2) > 3 else None
@@ -216,24 +187,18 @@ def run_q1(x, y=True, a=False):
         m2=m2,
     )
 
-
 def q1_rh_bias(x):
     y = x[["datetime", "PM25 Ug/m3", "PM-2.5", "RH_ref"]].dropna().copy()
     y["bias_compact_minus_ref"] = y["PM-2.5"] - y["PM25 Ug/m3"]
-
     a = [0, 60, 75, 85, 100]
     b = ["<60%", "60-75%", "75-85%", "85-100%"]
-
     y["RH_band"] = pd.cut(y["RH_ref"], bins=a, labels=b, include_lowest=True)
-
     out = (
         y.groupby("RH_band", observed=False)["bias_compact_minus_ref"]
         .agg(["count", "mean", "median", "std"])
         .reset_index()
     )
-
     return out
-
 
 # Q2
 @dataclass
@@ -244,7 +209,6 @@ class Q2Result:
     b: int
     out: pd.DataFrame
     z: pd.DataFrame
-
 
 def compare_q2(x, y, a=15, b=0):
     # x - compact raw
@@ -265,16 +229,12 @@ def compare_q2(x, y, a=15, b=0):
 
     return out
 
-
 def run_q2(x, y):
-    # x - compact raw
-    # y - naps
     z = (
         x.set_index("datetime")[["NO2_ppb"]]
         .resample("15min").mean()
         .reset_index()
     )
-
     out = pd.merge(
         y[["datetime", "NO2 ppb"]].dropna(),
         z,
@@ -301,11 +261,9 @@ def run_q2(x, y):
 
             if len(c) < 20:
                 continue
-
             d = float(c["NO2 ppb"].corr(c["NO2_smoothed"]))
             e = get_rmse(c["NO2 ppb"], c["NO2_smoothed"])
             f = float(mean_absolute_error(c["NO2 ppb"], c["NO2_smoothed"]))
-
             all_rows.append({
                 "window_min": a,
                 "lag_min": b,
@@ -314,7 +272,6 @@ def run_q2(x, y):
                 "MAE": f,
                 "N": len(c),
             })
-
             score = (d, -e)
             if best_score is None or score > best_score:
                 best_score = score
@@ -323,14 +280,12 @@ def run_q2(x, y):
                 best_out = c.copy()
 
     g = pd.DataFrame(all_rows).sort_values(["correlation", "RMSE"], ascending=[False, True])
-
     p2 = {
         "correlation": float(best_out["NO2 ppb"].corr(best_out["NO2_smoothed"])),
         "RMSE": get_rmse(best_out["NO2 ppb"], best_out["NO2_smoothed"]),
         "MAE": float(mean_absolute_error(best_out["NO2 ppb"], best_out["NO2_smoothed"])),
         "N": int(len(best_out)),
     }
-
     return Q2Result(
         x=p1,
         y=p2,
@@ -339,8 +294,7 @@ def run_q2(x, y):
         out=best_out,
         z=g,
     )
-
-
+    
 # Q3
 @dataclass
 class Q3Result:
@@ -352,7 +306,6 @@ class Q3Result:
     d: dict | None
     e: dict
     out: pd.DataFrame
-
 
 def run_q3(x, y=False):
     out = x[
@@ -381,7 +334,6 @@ def run_q3(x, y=False):
 
     z1 = x1["NO2 ppb"]
     z2 = y1["NO2 ppb"]
-
     m1 = LinearRegression().fit(x1[["NO2_ppb"]], z1)
     y1["pred_m1"] = m1.predict(y1[["NO2_ppb"]])
 
@@ -409,14 +361,12 @@ def run_q3(x, y=False):
     b1 = out[out["afternoon"] == 1].copy()
     c3 = float(b1["NO2_ppb"].corr(b1["O3_ppb"])) if len(b1) > 3 else np.nan
     c4 = float(b1["NO2 ppb"].corr(b1["O3 ppb"])) if len(b1) > 3 else np.nan
-
     c_all = {
         "compact_NO2_vs_compact_O3_alltime": c1,
         "reference_NO2_vs_reference_O3_alltime": c2,
         "compact_NO2_vs_compact_O3_afternoon": c3,
         "reference_NO2_vs_reference_O3_afternoon": c4,
     }
-
     return Q3Result(
         x=p1,
         y=p2,
